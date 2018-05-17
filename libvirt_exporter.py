@@ -16,7 +16,12 @@ uri = args["uniform_resource_identifier"]
 
 
 def connect_to_uri(uri):
-    conn = libvirt.open(uri)
+    
+    conn = None
+    try:
+        conn = libvirt.open(uri)
+    except:
+        pass
 
     if conn == None:
         print('Failed to open connection to ' + uri, file = sys.stderr)
