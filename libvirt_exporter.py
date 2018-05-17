@@ -16,8 +16,12 @@ uri = args["uniform_resource_identifier"]
 
 
 def connect_to_uri(uri):
-    conn = libvirt.open(uri)
 
+    conn = None
+    try:
+        conn = libvirt.open(uri)
+    except:
+        pass
     if conn == None:
         print('Failed to open connection to ' + uri, file = sys.stderr)
     else:
@@ -91,7 +95,6 @@ def add_metrics(dom, header_mn, g_dict):
     labels = {'domain':dom.name()}
 
     if header_mn == "libvirt_cpu_stats_":
-
         stats = dom.getCPUStats(True)
         metric_names = stats[0].keys()
         metrics_collection = get_metrics_collections(metric_names, labels, stats)
@@ -156,22 +159,25 @@ def add_metrics(dom, header_mn, g_dict):
 def job(uri, g_dict, scheduler):
     print('BEGIN JOB :', time.time())
     conn = connect_to_uri(uri)
-    domains = get_domains(conn)
-    while domains is None:
+    if conn is None:
+        pass
+    else:
         domains = get_domains(conn)
-        time.sleep(int(args["scrape_interval"]))
+        while domains is None:
+            domains = get_domains(conn)
+            time.sleep(int(args["scrape_interval"]))
 
-    for dom in domains:
+        for dom in domains:
 
-        print(dom.name())
+            print(dom.name())
 
-        headers_mn = ["libvirt_cpu_stats_", "libvirt_mem_stats_", \
-                      "libvirt_block_stats_", "libvirt_interface_"]
+            headers_mn = ["libvirt_cpu_stats_", "libvirt_mem_stats_", \
+                          "libvirt_block_stats_", "libvirt_interface_"]
 
-        for header_mn in headers_mn:
-            g_dict = add_metrics(dom, header_mn, g_dict)
+            for header_mn in headers_mn:
+                g_dict = add_metrics(dom, header_mn, g_dict)
+        conn.close()
 
-    conn.close()
     print('FINISH JOB :', time.time())
     scheduler.enter((int(args["scrape_interval"])), 1, job, (uri, g_dict, scheduler))
 
@@ -186,6 +192,7 @@ def main():
     print('START:', time.time())
     scheduler.enter(0, 1, job, (uri, g_dict, scheduler))
     scheduler.run()
+
 
 if __name__ == '__main__':
     main()
