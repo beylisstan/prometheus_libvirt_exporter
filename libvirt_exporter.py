@@ -4,6 +4,7 @@ import argparse
 import libvirt
 import sched
 import time
+from datetime import datetime
 from prometheus_client import start_http_server, Gauge
 from xml.etree import ElementTree
 
@@ -88,8 +89,8 @@ def get_metrics_multidim_collections(dom, metric_names, device):
 
 
 def add_metrics(dom, header_mn, g_dict):
-    labels = {'domain': dom.name()}
     try:
+        labels = {'domain': dom.name()}
         if header_mn == "libvirt_cpu_stats_":
             stats = dom.getCPUStats(True)
             metric_names = stats[0].keys()
@@ -128,34 +129,34 @@ def add_metrics(dom, header_mn, g_dict):
 
             metrics_collection = get_metrics_multidim_collections(dom, metric_names, device="interface")
             unit = ""
+
+        for mn in metrics_collection:
+            metric_name = header_mn + mn + unit
+            dimensions = metrics_collection[mn]
+
+            if metric_name not in g_dict.keys():
+
+                metric_help = 'help'
+                labels_names = metrics_collection[mn][0][1].keys()
+
+                g_dict[metric_name] = Gauge(metric_name, metric_help, labels_names)
+
+                for dimension in dimensions:
+                    dimension_metric_value = dimension[0]
+                    dimension_label_values = dimension[1].values()
+                    g_dict[metric_name].labels(*dimension_label_values).set(dimension_metric_value)
+            else:
+                for dimension in dimensions:
+                    dimension_metric_value = dimension[0]
+                    dimension_label_values = dimension[1].values()
+                    g_dict[metric_name].labels(*dimension_label_values).set(dimension_metric_value)
     except Exception as e:
         print(e)
-
-    for mn in metrics_collection:
-        metric_name = header_mn + mn + unit
-        dimensions = metrics_collection[mn]
-
-        if metric_name not in g_dict.keys():
-
-            metric_help = 'help'
-            labels_names = metrics_collection[mn][0][1].keys()
-
-            g_dict[metric_name] = Gauge(metric_name, metric_help, labels_names)
-
-            for dimension in dimensions:
-                dimension_metric_value = dimension[0]
-                dimension_label_values = dimension[1].values()
-                g_dict[metric_name].labels(*dimension_label_values).set(dimension_metric_value)
-        else:
-            for dimension in dimensions:
-                dimension_metric_value = dimension[0]
-                dimension_label_values = dimension[1].values()
-                g_dict[metric_name].labels(*dimension_label_values).set(dimension_metric_value)
     return g_dict
 
 
 def job(uri, g_dict, scheduler):
-    print('BEGIN JOB :', time.time())
+    print('BEGIN JOB :', datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3])
     conn = connect_to_uri(uri)
     if conn is None:
         pass
@@ -175,8 +176,8 @@ def job(uri, g_dict, scheduler):
             for header_mn in headers_mn:
                 g_dict = add_metrics(dom, header_mn, g_dict)
         conn.close()
-
-    print('FINISH JOB :', time.time())
+    print('FINISH JOB :', datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3])
+    print('-------------------------')
     scheduler.enter((int(args["scrape_interval"])), 1, job, (uri, g_dict, scheduler))
 
 
@@ -186,7 +187,7 @@ def main():
     g_dict = {}
 
     scheduler = sched.scheduler(time.time, time.sleep)
-    print('START:', time.time())
+    print('START:', datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3])
     scheduler.enter(0, 1, job, (uri, g_dict, scheduler))
     scheduler.run()
 
