@@ -7,31 +7,28 @@ import time
 from prometheus_client import start_http_server, Gauge
 from xml.etree import ElementTree
 
-
 parser = argparse.ArgumentParser(description='libvirt_exporter scrapes domains metrics from libvirt daemon')
-parser.add_argument('-si','--scrape_interval', help='scrape interval for metrics in seconds', default= 5)
-parser.add_argument('-uri','--uniform_resource_identifier', help='Libvirt Uniform Resource Identifier', default= "qemu:///system")
+parser.add_argument('-si', '--scrape_interval', help='scrape interval for metrics in seconds', default=5)
+parser.add_argument('-uri', '--uniform_resource_identifier', help='Libvirt Uniform Resource Identifier',
+                    default="qemu:///system")
 args = vars(parser.parse_args())
 uri = args["uniform_resource_identifier"]
 
 
 def connect_to_uri(uri):
-
     conn = None
     try:
         conn = libvirt.open(uri)
-    except:
-        pass
-
-    if conn == None:
-        print('Failed to open connection to ' + uri, file = sys.stderr)
+    except Exception as e:
+        print(e)
+    if conn is None:
+        print('Failed to open connection to ' + uri, file=sys.stderr)
     else:
         print('Successfully connected to ' + uri)
     return conn
 
 
 def get_domains(conn):
-
     domains = []
 
     for id in conn.listDomainsID():
@@ -64,11 +61,10 @@ def get_metrics_collections(metric_names, labels, stats):
 
 
 def get_metrics_multidim_collections(dom, metric_names, device):
-
     tree = ElementTree.fromstring(dom.XMLDesc())
     targets = []
 
-    for target in tree.findall("devices/" + device + "/target"): # !
+    for target in tree.findall("devices/" + device + "/target"):  # !
         targets.append(target.get("dev"))
 
     metrics_collection = {}
@@ -79,9 +75,9 @@ def get_metrics_multidim_collections(dom, metric_names, device):
             labels = {'domain': dom.name()}
             labels['target_device'] = target
             if device == "interface":
-                stats = dom.interfaceStats(target) # !
+                stats = dom.interfaceStats(target)  # !
             elif device == "disk":
-                stats= dom.blockStats(target)
+                stats = dom.blockStats(target)
             stats = dict(zip(metric_names, stats))
             dimension = [stats[mn], labels]
             dimensions.append(dimension)
@@ -92,48 +88,48 @@ def get_metrics_multidim_collections(dom, metric_names, device):
 
 
 def add_metrics(dom, header_mn, g_dict):
+    labels = {'domain': dom.name()}
+    try:
+        if header_mn == "libvirt_cpu_stats_":
+            stats = dom.getCPUStats(True)
+            metric_names = stats[0].keys()
+            metrics_collection = get_metrics_collections(metric_names, labels, stats)
+            unit = "_nanosecs"
 
-    labels = {'domain':dom.name()}
+        elif header_mn == "libvirt_mem_stats_":
+            stats = dom.memoryStats()
+            metric_names = stats.keys()
+            metrics_collection = get_metrics_collections(metric_names, labels, stats)
+            unit = ""
 
-    if header_mn == "libvirt_cpu_stats_":
+        elif header_mn == "libvirt_block_stats_":
 
-        stats = dom.getCPUStats(True)
-        metric_names = stats[0].keys()
-        metrics_collection = get_metrics_collections(metric_names, labels, stats)
-        unit = "_nanosecs"
+            metric_names = \
+                ['read_requests_issued',
+                 'read_bytes',
+                 'write_requests_issued',
+                 'write_bytes',
+                 'errors_number']
 
-    elif header_mn == "libvirt_mem_stats_":
-        stats = dom.memoryStats()
-        metric_names = stats.keys()
-        metrics_collection = get_metrics_collections(metric_names, labels, stats)
-        unit = ""
+            metrics_collection = get_metrics_multidim_collections(dom, metric_names, device="disk")
+            unit = ""
 
-    elif header_mn == "libvirt_block_stats_":
+        elif header_mn == "libvirt_interface_":
 
-        metric_names = \
-        ['read_requests_issued',
-        'read_bytes' ,
-        'write_requests_issued',
-        'write_bytes',
-        'errors_number']
+            metric_names = \
+                ['read_bytes',
+                 'read_packets',
+                 'read_errors',
+                 'read_drops',
+                 'write_bytes',
+                 'write_packets',
+                 'write_errors',
+                 'write_drops']
 
-        metrics_collection = get_metrics_multidim_collections(dom, metric_names, device="disk")
-        unit = ""
-
-    elif header_mn == "libvirt_interface_":
-
-        metric_names = \
-        ['read_bytes',
-        'read_packets',
-        'read_errors',
-        'read_drops',
-        'write_bytes',
-        'write_packets',
-        'write_errors',
-        'write_drops']
-
-        metrics_collection = get_metrics_multidim_collections(dom, metric_names, device="interface")
-        unit = ""
+            metrics_collection = get_metrics_multidim_collections(dom, metric_names, device="interface")
+            unit = ""
+    except Exception as e:
+        print(e)
 
     for mn in metrics_collection:
         metric_name = header_mn + mn + unit
@@ -185,7 +181,6 @@ def job(uri, g_dict, scheduler):
 
 
 def main():
-
     start_http_server(9177)
 
     g_dict = {}
